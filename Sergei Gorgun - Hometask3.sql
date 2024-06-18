@@ -50,14 +50,18 @@ WHERE NOT EXISTS (
 ORDER BY a.last_name, a.first_name;
 
 --4. Write a query that will return the three most popular in rental films by each genre.
-SELECT genre, film_id, title, rental_count
+SELECT 
+    genre, 
+    film_id, 
+    title, 
+    rental_count
 FROM (
     SELECT 
         c.name AS genre,
         f.film_id,
         f.title,
         COUNT(r.rental_id) AS rental_count,
-        RANK() OVER (PARTITION BY c.name ORDER BY COUNT(r.rental_id) DESC) AS rank
+        ROW_NUMBER() OVER (PARTITION BY c.name ORDER BY COUNT(r.rental_id) DESC) AS row_num
     FROM 
         film f
     JOIN 
@@ -71,8 +75,8 @@ FROM (
     GROUP BY 
         c.name, f.film_id, f.title
 ) subquery
-WHERE rank <= 3
-ORDER BY genre, rank;
+WHERE row_num <= 3
+ORDER BY genre, row_num;
 
 --5. Calculate the number of films released each year and cumulative total by the number of films. Write two query versions, one with window functions, the other without.
 SELECT 
