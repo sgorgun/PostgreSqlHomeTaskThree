@@ -111,50 +111,63 @@ FROM
 ORDER BY
     release_year;	
 
---6Calculate a monthly statistics based on “rental_date” field from “Rental” table that for each month will show the percentage of “Animation” films from the total number of rentals. Write two query versions, one with window functions, the other without.
-SELECT 
-    TO_CHAR(rental_month, 'YYYY-MM') AS rental_month,
-    animation_rentals,
-    total_rentals,
-    ROUND((animation_rentals::NUMERIC / total_rentals) * 100, 2) || '%' AS animation_percentage
-FROM (
+--6. Calculate a monthly statistics based on “rental_date” field from “Rental” table that for each month will show the percentage of “Animation” films from the total number of rentals. Write two query versions, one with window functions, the other without.
+WITH months AS (
+    SELECT DISTINCT TO_CHAR(r.rental_date, 'Month') AS rental_month
+    FROM rental r
+),
+rentals_with_animation AS (
     SELECT
-        DATE_TRUNC('month', r.rental_date) AS rental_month,
-        COUNT(*) OVER (PARTITION BY DATE_TRUNC('month', r.rental_date)) AS total_rentals,
-        SUM(CASE WHEN c.name = 'Animation' THEN 1 ELSE 0 END) OVER (PARTITION BY DATE_TRUNC('month', r.rental_date)) AS animation_rentals
+        TO_CHAR(r.rental_date, 'Month') AS rental_month,
+        COUNT(*) OVER (PARTITION BY TO_CHAR(r.rental_date, 'Month')) AS total_rentals,
+        COUNT(*) FILTER (WHERE c.name = 'Animation') OVER (PARTITION BY TO_CHAR(r.rental_date, 'Month')) AS animation_rentals
     FROM
         rental r
-    JOIN
-        inventory i ON r.inventory_id = i.inventory_id
-    JOIN
-        film_category fc ON i.film_id = fc.film_id
-    JOIN
-        category c ON fc.category_id = c.category_id
-) subquery
-GROUP BY
-    rental_month, animation_rentals, total_rentals
+        LEFT JOIN inventory i ON r.inventory_id = i.inventory_id
+        LEFT JOIN film_category fc ON i.film_id = fc.film_id
+        LEFT JOIN category c ON fc.category_id = c.category_id
+)
+SELECT
+    m.rental_month,
+    COALESCE(rwa.animation_rentals, 0) AS animation_rentals,
+    COALESCE(rwa.total_rentals, 0) AS total_rentals,
+    ROUND((COALESCE(rwa.animation_rentals, 0)::DECIMAL / COALESCE(rwa.total_rentals, 1)::DECIMAL) * 100, 2) || '%' AS animation_percentage
+FROM
+    months m
+    LEFT JOIN (
+        SELECT DISTINCT
+            rental_month,
+            animation_rentals,
+            total_rentals
+        FROM
+            rentals_with_animation
+    ) rwa ON m.rental_month = rwa.rental_month
 ORDER BY
-    rental_month;
+    TO_DATE(m.rental_month, 'Month');
 
 --
 SELECT
-    TO_CHAR(DATE_TRUNC('month', r.rental_date), 'YYYY-MM') AS rental_month,
-    COUNT(*) FILTER (WHERE c.name = 'Animation') AS animation_rentals,
-    COUNT(*) AS total_rentals,
-    ROUND(COUNT(*) FILTER (WHERE c.name = 'Animation')::NUMERIC / COUNT(*) * 100, 2) || '%' AS animation_percentage
-FROM
-    rental r
-JOIN
-    inventory i ON r.inventory_id = i.inventory_id
-JOIN
-    film_category fc ON i.film_id = fc.film_id
-JOIN
-    category c ON fc.category_id = c.category_id
-GROUP BY
-    rental_month
+    rental_month,
+    COALESCE(animation_rentals, 0) AS animation_rentals,
+    total_rentals,
+    ROUND((COALESCE(animation_rentals, 0)::DECIMAL / total_rentals::DECIMAL) * 100, 2) || '%' AS animation_percentage
+FROM (
+    SELECT
+        TO_CHAR(r.rental_date, 'Month') AS rental_month,
+        COUNT(*) FILTER (WHERE c.name = 'Animation') AS animation_rentals,
+        COUNT(*) AS total_rentals
+    FROM
+        rental r
+        JOIN inventory i ON r.inventory_id = i.inventory_id
+        JOIN film_category fc ON i.film_id = fc.film_id
+        JOIN category c ON fc.category_id = c.category_id
+    GROUP BY
+        TO_CHAR(r.rental_date, 'Month')
+    ORDER BY
+        TO_CHAR(r.rental_date, 'Month')
+) AS monthly_stats
 ORDER BY
-    rental_month;
-
+    TO_DATE(rental_month, 'Month');
 
 --7.Write a query that will return the names of actors who have starred in “Action” films more than in “Drama” film.
 SELECT 
